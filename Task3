@@ -1,0 +1,103 @@
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+
+def load_data():
+    """A small labeled sample of spam and ham messages."""
+    data = [
+        # --- spam ---
+        ("Congratulations! You've won a $1000 Walmart gift card. Click here to claim now!", "spam"),
+        ("URGENT: Your account has been suspended. Verify your details immediately to avoid closure.", "spam"),
+        ("FREE entry into our $5000 prize draw, text WIN to 80086 now!", "spam"),
+        ("You have been selected for a cash reward. Reply now to claim your prize.", "spam"),
+        ("Get rich quick! Invest $100 today and earn $10,000 in a week guaranteed.", "spam"),
+        ("Limited time offer! Buy one get one free, click the link to shop now.", "spam"),
+        ("Your loan of $50,000 has been approved. Click here to receive funds instantly.", "spam"),
+        ("Hot singles in your area are waiting to chat with you tonight!", "spam"),
+        ("Claim your free iPhone now, just pay shipping and handling fee.", "spam"),
+        ("WINNER!! As a valued customer you have been selected to receive a prize.", "spam"),
+        ("Lowest price on Viagra online, no prescription needed, order now.", "spam"),
+        ("Act now! Your credit score qualifies you for an exclusive cash offer.", "spam"),
+        ("Congratulations, you have won a lottery of 1,000,000 dollars, contact us to claim.", "spam"),
+        ("Make money from home, earn $500 a day with no experience required.", "spam"),
+        ("This is your final notice, pay now to avoid legal action against you.", "spam"),
+        ("Click this link to unlock exclusive discounts up to 90% off today only.", "spam"),
+        ("You've been chosen for a free cruise vacation, call now to reserve your spot.", "spam"),
+        ("Verify your bank account now or it will be permanently locked.", "spam"),
+        ("Earn extra cash working online, no skills needed, sign up today.", "spam"),
+        ("Your package delivery failed, click here to reschedule and pay a small fee.", "spam"),
+        # --- ham ---
+        ("Hey, are we still meeting for lunch tomorrow at noon?", "ham"),
+        ("Can you send me the report before the end of the day?", "ham"),
+        ("Thanks for your help with the presentation, it went really well.", "ham"),
+        ("Don't forget to pick up milk and eggs on your way home.", "ham"),
+        ("The meeting has been rescheduled to 3 PM on Thursday.", "ham"),
+        ("Happy birthday! Hope you have a wonderful day.", "ham"),
+        ("Let's catch up over coffee sometime next week.", "ham"),
+        ("I attached the project files you asked for, let me know if anything's missing.", "ham"),
+        ("Can you review my code before I push it to the main branch?", "ham"),
+        ("Mom said dinner will be ready around 7 tonight.", "ham"),
+        ("The flight got delayed by two hours, we'll land around 9 PM.", "ham"),
+        ("Great job on the exam, your hard work really paid off.", "ham"),
+        ("Please find attached the invoice for last month's services.", "ham"),
+        ("I'll be working from home tomorrow, call me if you need anything.", "ham"),
+        ("Just checking in to see how you're feeling after the surgery.", "ham"),
+        ("Our team meeting is moved to the conference room on the 4th floor.", "ham"),
+        ("Could you proofread this email before I send it to the client?", "ham"),
+        ("Looking forward to seeing you at the reunion this weekend.", "ham"),
+        ("The doctor's appointment is confirmed for 10 AM on Monday.", "ham"),
+        ("Thanks again for the birthday gift, I really loved it.", "ham"),
+    ]
+    return pd.DataFrame(data, columns=["message", "label"])
+
+
+# 1. Load the dataset
+df = load_data()
+print(f"Dataset size: {len(df)} messages")
+print(df["label"].value_counts())
+print("\nSample rows:")
+print(df.sample(5, random_state=1))
+
+X = df["message"]
+y = df["label"]
+
+# 2. Split into training and testing sets
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.25, random_state=42, stratify=y
+)
+
+# 3. Convert text to TF-IDF features
+vectorizer = TfidfVectorizer(stop_words="english", lowercase=True)
+X_train_tfidf = vectorizer.fit_transform(X_train)
+X_test_tfidf = vectorizer.transform(X_test)
+
+# 4. Train the model
+model = MultinomialNB()
+model.fit(X_train_tfidf, y_train)
+
+# 5. Evaluate
+y_pred = model.predict(X_test_tfidf)
+accuracy = accuracy_score(y_test, y_pred)
+
+print(f"\nModel Accuracy: {accuracy * 100:.2f}%")
+print("\nConfusion Matrix (rows=actual, cols=predicted) [ham, spam]:")
+print(confusion_matrix(y_test, y_pred, labels=["ham", "spam"]))
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred))
+
+# 6. Test on new, unseen messages
+new_messages = [
+    "Congratulations! You've been selected to win a free vacation, click now!",
+    "Hey, can we reschedule our call to tomorrow morning?",
+    "URGENT: verify your account now to avoid suspension",
+    "Let's grab dinner this Friday, my treat!",
+]
+new_tfidf = vectorizer.transform(new_messages)
+predictions = model.predict(new_tfidf)
+
+print("\nPredictions on new messages:")
+for msg, pred in zip(new_messages, predictions):
+    print(f"  [{pred.upper():5}] {msg}")
