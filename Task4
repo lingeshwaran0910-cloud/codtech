@@ -1,0 +1,109 @@
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    roc_auc_score, confusion_matrix, classification_report
+)
+
+
+def load_data(n_samples=5000, fraud_ratio=0.02, seed=42):
+    """Generate a realistic, imbalanced synthetic transactions dataset."""
+    rng = np.random.default_rng(seed)
+    n_fraud = int(n_samples * fraud_ratio)
+    n_normal = n_samples - n_fraud
+
+    # Normal transactions: modest amounts, typical hours, low-risk pattern
+    normal = pd.DataFrame({
+        "Amount": rng.gamma(2.0, 40, n_normal).clip(1, 2000),
+        "Hour": rng.normal(14, 5, n_normal).clip(0, 23),
+        "TxnPerDay": rng.poisson(4, n_normal).clip(0, 20),
+        "DistanceFromHome_km": rng.exponential(5, n_normal).clip(0, 100),
+        "IsForeignTxn": rng.choice([0, 1], n_normal, p=[0.95, 0.05]),
+        "TimeSinceLastTxn_min": rng.exponential(180, n_normal).clip(1, 1440),
+        "Class": 0,
+    })
+
+    # Fraudulent transactions: larger/odd amounts, unusual hours, riskier pattern
+    fraud = pd.DataFrame({
+        "Amount": rng.gamma(3.0, 250, n_fraud).clip(1, 10000),
+        "Hour": rng.normal(3, 4, n_fraud).clip(0, 23),
+        "TxnPerDay": rng.poisson(9, n_fraud).clip(0, 30),
+        "DistanceFromHome_km": rng.exponential(80, n_fraud).clip(0, 2000),
+        "IsForeignTxn": rng.choice([0, 1], n_fraud, p=[0.4, 0.6]),
+        "TimeSinceLastTxn_min": rng.exponential(20, n_fraud).clip(0.5, 1440),
+        "Class": 1,
+    })
+
+    df = pd.concat([normal, fraud], ignore_index=True).sample(frac=1, random_state=seed).reset_index(drop=True)
+    return df
+
+
+# 1. Load the dataset
+df = load_data()
+print(f"Dataset shape: {df.shape}")
+print(df["Class"].value_counts().rename({0: "Legit", 1: "Fraud"}))
+print(f"Fraud rate: {df['Class'].mean() * 100:.2f}%")
+print("\nSample rows:")
+print(df.sample(5, random_state=1))
+
+X = df.drop(columns="Class")
+y = df["Class"]
+
+# 2. Split into training and testing sets (stratify to preserve fraud ratio)
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.25, random_state=42, stratify=y
+)
+
+# 3. Feature scaling
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# 4. Train model (class_weight="balanced" compensates for the imbalance)
+model = RandomForestClassifier(
+    n_estimators=200, class_weight="balanced", random_state=42, n_jobs=-1
+)
+model.fit(X_train_scaled, y_train)
+
+# 5. Predict
+y_pred = model.predict(X_test_scaled)
+y_proba = model.predict_proba(X_test_scaled)[:, 1]
+
+# 6. Evaluate (accuracy alone is misleading here — focus on precision/recall/F1/AUC)
+print(f"\nAccuracy : {accuracy_score(y_test, y_pred) * 100:.2f}%")
+print(f"Precision: {precision_score(y_test, y_pred):.4f}")
+print(f"Recall   : {recall_score(y_test, y_pred):.4f}")
+print(f"F1 Score : {f1_score(y_test, y_pred):.4f}")
+print(f"ROC-AUC  : {roc_auc_score(y_test, y_proba):.4f}")
+
+print("\nConfusion Matrix [rows=actual, cols=predicted] [Legit, Fraud]:")
+print(confusion_matrix(y_test, y_pred))
+
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred, target_names=["Legit", "Fraud"]))
+
+# 7. Feature importance
+importances = pd.Series(model.feature_importances_, index=X.columns).sort_values(ascending=False)
+print("Feature Importance:")
+print(importances)
+
+# 8. Predict on new, unseen transactions
+new_txns = pd.DataFrame([
+    # A very typical, low-risk transaction
+    {"Amount": 45, "Hour": 13, "TxnPerDay": 3, "DistanceFromHome_km": 2,
+     "IsForeignTxn": 0, "TimeSinceLastTxn_min": 240},
+    # A suspicious transaction: large amount, odd hour, foreign, rapid-fire
+    {"Amount": 3200, "Hour": 3, "TxnPerDay": 12, "DistanceFromHome_km": 900,
+     "IsForeignTxn": 1, "TimeSinceLastTxn_min": 2},
+])
+new_scaled = scaler.transform(new_txns)
+preds = model.predict(new_scaled)
+probs = model.predict_proba(new_scaled)[:, 1]
+
+print("\nPredictions on new transactions:")
+for i, (pred, prob) in enumerate(zip(preds, probs)):
+    label = "FRAUD" if pred == 1 else "LEGIT"
+    print(f"  Transaction {i+1}: {label} (fraud probability: {prob:.2%})")
